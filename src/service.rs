@@ -1,5 +1,5 @@
-use crate::actor::ActorManager;
-use crate::{Actor, Addr};
+use crate::{Actor, Addr, lifecycle::LifeCycle};
+
 use anyhow::Result;
 use fnv::FnvHasher;
 use futures::lock::Mutex;
@@ -57,12 +57,12 @@ pub trait Service: Actor + Default {
         match registry.get_mut(&TypeId::of::<Self>()) {
             Some(addr) => Ok(addr.downcast_ref::<Addr<Self>>().unwrap().clone()),
             None => {
-                let actor_manager = ActorManager::new();
+                let life_cycle = LifeCycle::new();
 
-                registry.insert(TypeId::of::<Self>(), Box::new(actor_manager.address()));
+                registry.insert(TypeId::of::<Self>(), Box::new(life_cycle.address()));
                 drop(registry);
 
-                actor_manager.start_actor(Self::default()).await
+                life_cycle.start(Self::default()).await
             }
         }
     }
@@ -88,7 +88,7 @@ pub trait LocalService: Actor + Default {
         match res {
             Some(addr) => Ok(addr),
             None => {
-                let addr = ActorManager::new().start_actor(Self::default()).await?;
+                let addr = LifeCycle::new().start(Self::default()).await?;
                 LOCAL_REGISTRY.with(|registry| {
                     registry
                         .borrow_mut()
