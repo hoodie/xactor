@@ -66,7 +66,7 @@ impl<A: Actor> Addr<A> {
     }
 
     /// Stop the actor.
-    pub fn stop(&mut self, err: Option<Error>) -> Result<()> {
+    pub fn stop(&self, err: Option<Error>) -> Result<()> {
         mpsc::UnboundedSender::clone(&*self.tx).start_send(ActorEvent::Stop(err))?;
         Ok(())
     }

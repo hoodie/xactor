@@ -34,7 +34,6 @@ impl<A: Actor> Default for LifeCycle<A> {
 }
 
 impl<A: Actor> LifeCycle<A> {
-
     pub fn new() -> Self {
         Default::default()
     }
@@ -98,29 +97,39 @@ impl<A: Actor> LifeCycle<A> {
             ..
         } = self;
 
-
-        let addr = Addr {
-            actor_id: ctx.actor_id(),
-            tx,
-            rx_exit: ctx.rx_exit.clone(),
-        };
+        let rx_exit = ctx.rx_exit.clone();
+        let actor_id = ctx.actor_id();
 
         // Create the actor
         let mut actor = f();
 
+        // let (tx_exit_supervisor, rx_exit_supervisor) = oneshot::channel();
+        let supervisor_addr = Addr {
+            actor_id,
+            tx,
+            // rx_exit: Some(rx_exit_supervisor.shared()),
+            rx_exit
+        };
+
         // Call started
-        actor.started(&mut ctx).await?;
+        actor.started(&mut ctx).await?; // FIXME: needs it's own context
 
         spawn({
             async move {
-                println!("<supervisor>");
+                //println!("<supervisor>");
                 'restart_loop: loop {
-                    println!("  <restart_loop>");
+                    //println!("  <restart_loop>");
                     'event_loop: loop {
-                    println!("    <event_loop>");
+                        //println!("    <event_loop>");
                         match rx.next().await {
-                            None => break 'restart_loop,
-                            Some(ActorEvent::Stop(_err)) => break 'event_loop,
+                            None => {
+                                println!("   ✋ break restart_loop");
+                                break 'restart_loop;
+                            }
+                            Some(ActorEvent::Stop(_err)) => {
+                                println!("   ✋ break event_loop");
+                                break 'event_loop;
+                            }
                             Some(ActorEvent::Exec(f)) => f(&mut actor, &mut ctx).await,
                             Some(ActorEvent::RemoveStream(id)) => {
                                 if ctx.streams.contains(id) {
@@ -128,7 +137,7 @@ impl<A: Actor> LifeCycle<A> {
                                 }
                             }
                         }
-                    println!("    </event_loop>");
+                        //println!("    </event_loop>");
                     }
 
                     actor.stopped(&mut ctx).await;
@@ -137,16 +146,16 @@ impl<A: Actor> LifeCycle<A> {
 
                     actor = f();
                     actor.started(&mut ctx).await.ok();
-                    println!("  </restart_loop>");
+                    // println!("  </restart_loop>");
                 }
                 actor.stopped(&mut ctx).await;
                 ctx.abort_streams();
                 ctx.abort_intervals();
-                println!("</supervisor>");
+                // tx_exit_supervisor.send(()).ok();
+                // println!("</supervisor>");
             }
         });
 
-        Ok(addr)
-
+        Ok(supervisor_addr)
     }
 }
