@@ -66,17 +66,26 @@ impl Handler<Panic> for PingTimer {
 
 #[xactor::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let service_supervisor = xactor::Supervisor::start(PingTimer::default).await?;
-    let service_addr = service_supervisor.clone();
+    let lifecycle = xactor::LifeCycle::default();
+    // let lifecycle_addr = lifecycle.address();
 
-    let supervisor_task = xactor::spawn(async {
-        service_supervisor.wait_for_stop().await;
+    let lifecycle_addr = 
+    lifecycle.start_supervised(PingTimer::default).await?;
+
+    let supervisor_task = xactor::spawn({
+        let addr = lifecycle_addr.clone();
+        async move {
+            addr.wait_for_stop().await;
+        }
     });
 
-    let send_halt = async {
-        xactor::sleep(Duration::from_millis(5_200)).await;
-        println!("  main  :: sending Halt");
-        service_addr.send(Halt).unwrap();
+    let send_halt = {
+        let addr = lifecycle_addr.clone();
+        async move {
+            xactor::sleep(Duration::from_millis(5_200)).await;
+            println!("  main  :: sending Halt");
+            addr.send(Halt).unwrap();
+        }
     };
 
     futures::join!(supervisor_task, send_halt);

@@ -12,15 +12,15 @@ use crate::{
     Result, {Actor, Addr, Context},
 };
 
-pub(crate) struct LifeCycle<A: Actor> {
+pub struct LifeCycle<A: Actor> {
     ctx: Context<A>,
     tx: std::sync::Arc<UnboundedSender<ActorEvent<A>>>,
     rx: UnboundedReceiver<ActorEvent<A>>,
     tx_exit: oneshot::Sender<()>,
 }
 
-impl<A: Actor> LifeCycle<A> {
-    pub(crate) fn new() -> Self {
+impl<A: Actor> Default for LifeCycle<A> {
+    fn default() -> Self {
         let (tx_exit, rx_exit) = oneshot::channel();
         let rx_exit = rx_exit.shared();
         let (ctx, rx, tx) = Context::new(Some(rx_exit));
@@ -31,12 +31,19 @@ impl<A: Actor> LifeCycle<A> {
             tx_exit,
         }
     }
+}
 
-    pub(crate) fn address(&self) -> Addr<A> {
+impl<A: Actor> LifeCycle<A> {
+
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn address(&self) -> Addr<A> {
         self.ctx.address()
     }
 
-    pub(crate) async fn start(self, mut actor: A) -> Result<Addr<A>> {
+    pub async fn start(self, mut actor: A) -> Result<Addr<A>> {
         let Self {
             mut ctx,
             mut rx,
@@ -106,8 +113,11 @@ impl<A: Actor> LifeCycle<A> {
 
         spawn({
             async move {
+                println!("<supervisor>");
                 'restart_loop: loop {
+                    println!("  <restart_loop>");
                     'event_loop: loop {
+                    println!("    <event_loop>");
                         match rx.next().await {
                             None => break 'restart_loop,
                             Some(ActorEvent::Stop(_err)) => break 'event_loop,
@@ -118,6 +128,7 @@ impl<A: Actor> LifeCycle<A> {
                                 }
                             }
                         }
+                    println!("    </event_loop>");
                     }
 
                     actor.stopped(&mut ctx).await;
@@ -126,10 +137,12 @@ impl<A: Actor> LifeCycle<A> {
 
                     actor = f();
                     actor.started(&mut ctx).await.ok();
+                    println!("  </restart_loop>");
                 }
                 actor.stopped(&mut ctx).await;
                 ctx.abort_streams();
                 ctx.abort_intervals();
+                println!("</supervisor>");
             }
         });
 
